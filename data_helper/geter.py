@@ -76,6 +76,22 @@ def get_day(code,breed="etf",start_date=None, end_date=None,all=False):
     # date作为index
     # df.set_index('date',inplace=True)
     return df
+def get_custom_day(data_path:str=None):
+    """获取自定义数据"""
+    if data_path.endswith(".csv"):
+        df = pd.read_csv(data_path)
+    elif data_path.endswith(".h5"):
+        df = pd.read_hdf(data_path, key="all")
+    # df['date'] = pd.to_datetime(df['date'])
+    # df.set_index('date', inplace=True)
+    # 获取索引名称
+    index_name = df.index.name
+    # 恢复索引但不删除索引列
+    df.reset_index(inplace=True)
+    # 重命名索引
+    # df.rename(columns={index_name: 'date'}, inplace=True)
+    codes = df['code'].unique().tolist()
+    return codes,df
 def get_all_day(breed="cb",start_date="2015-01-01", end_date=pd.Timestamp.today().strftime('%Y-%m-%d'),cache=False,use_cache=False):
     """获取日线数据"""
     if use_cache:

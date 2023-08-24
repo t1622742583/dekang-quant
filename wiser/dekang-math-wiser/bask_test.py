@@ -1,108 +1,128 @@
 import os
 import sys
-
+from loguru import logger
+import pandas as pd
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # 获取三级父目录的绝对路径
 parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
 sys.path.append(parent_dir)
-
-import pandas as pd
-from utils import Feature
+from utils import Analyzer, Feature
 from typing import List
 
-from data_helper.geter import get_all_day, get_trade_days
+from data_helper.geter import get_all_day, get_custom_day, get_trade_days
 breed_unit = {
     "cb": 10,
     "stock": 100,
 }
 class Account:
-    def __init__(self,
-                 init_cash: float = 100000,  # 初始资金
-                 commission: float = 0.0003,  # 手续费
-                 stamp_duty: float = 0.001,  # 印花税
-                 breed: str = "cb",  # 品种
-                 ):
+    def __init__(self, init_cash: float = 100000, commission: float = 0.0003, stamp_duty: float = 0.001, breed: str = "cb"):
         self.breed = breed
-        self.init_cash = init_cash  # 初始资金
-        self.curr_cash = self.init_cash  # 当前现金
-        self.now_net_worth = self.init_cash  # 当前净值
-        self.commission = commission  # 手续费
-        self.stamp_duty = stamp_duty  # 印花税
-        self.cache_net_worth = []  # 每日市值序列
-        self.cache_position = []   # 每日持仓序列
-        self.position = {}  # 持仓 {"code": {"price": 100.0, "shares": 100}}
+        self.init_cash = init_cash
+        self.curr_cash = self.init_cash
+        self.now_net_worth = self.init_cash
+        self.commission = commission
+        self.stamp_duty = stamp_duty
+        self.cache_net_worth = []
+        self.cache_position = []
+        self.position = {}
+        self.unit = breed_unit[self.breed]
 
     @property
     def profit(self):
-        """收益"""
         return self.now_net_worth - self.init_cash
-    def update_net_worth(self):
-        """更新净值"""
-        self.now_net_worth = self.curr_cash + sum([self.position[code]["shares"] * breed_unit[self.breed] * self.position[code]["price"]  for code in self.position.keys()])
-    def change_position(self, selected_codes: List[dict]):
-        # 传入 [{'code': 'sz123011', 'price': 95.913, 'ratio': 0.1}, {'code': 'sz123010', 'price': 91.495, 'ratio': 0.1}, {'code': 'sz123002', 'price': 105.92, 'ratio': 0.1}, {'code': 'sz128044', 'price': 94.711, 'ratio': 0.1}, {'code': 'sh113505', 'price': 90.62, 'ratio': 0.1}, {'code': 'sz128037', 'price': 87.876, 'ratio': 0.1}, {'code': 'sz123012', 'price': 93.41, 'ratio': 0.1}, {'code': 'sh110048', 'price': 104.19, 'ratio': 0.1}, {'code': 'sh110044', 'price': 99.6, 'ratio': 0.1}, {'code': 'sh110047', 'price': 99.36, 'ratio': 0.1}]
-        # 先卖后调，如果当前持仓不在选股范围，获取当前收盘价价格清仓，去除仓位key，现金余额增加
-        # 1.获取当前持仓
-        curr_holding = self.position.keys()
-        # 2.获取当前选股
-        s_codes = [item["code"] for item in selected_codes]
-        # 3.获取需要卖出的股票
-        sell_codes = set(curr_holding) - set(s_codes)
-        # 5.卖出
-        for code in sell_codes:
-            code_info = self.position[code]
-            add_cash = code_info["shares"] * breed_unit[self.breed] * code_info["price"] * (1 - self.commission - self.stamp_duty)
-            self.position.pop(code)
-            self.curr_cash += add_cash
-        # a.先处理减仓，基于调仓比例计算相应手数，不同于加仓 不足10手按10手计算，“优减”，调整仓位key值，现金数增加
-        # 更新市值
-        self.update_net_worth()
-        trade_share = {}
-        for selected_code in selected_codes.copy():
-            code = selected_code["code"]
-            # if code in self.position.keys():
-            shares = selected_code["ratio"] * self.now_net_worth / (selected_code["price"]*breed_unit["cb"])
-            if shares < 1:
-                selected_codes.remove(selected_code)
-                continue
-            shares = int(shares)
-            trade_share[code] = shares
-        add_trade_share = {}
-        for code in trade_share.keys():
-            if code in self.position.keys():
-                if trade_share[code] < self.position[code]["shares"]:
-                    # 减仓
-                    self.position[code]["shares"] = trade_share[code]
-                    # 余额增加
-                    add_cash = (self.position[code]["shares"] - trade_share[code]) * self.position[code]["price"] *breed_unit[self.breed]* (1 - self.commission - self.stamp_duty)
-                    self.curr_cash += add_cash
-                elif trade_share[code] == self.position[code]["shares"]:
-                    # 不变
-                    continue
-                else:
-                    # 大于 加仓 等于 不变
-                    add_trade_share[code] = trade_share[code] - self.position[code]["shares"]
-            else:
-                add_trade_share[code] = trade_share[code]
-        # 加仓
-        for code in add_trade_share.keys():
-            # 买入
-            # 原始手数+add_trade_share[code]
-            if code in self.position.keys():
-                self.position[code]["shares"] += add_trade_share[code]
-            else:
-                self.position[code] = {"price": selected_code["price"], "shares": add_trade_share[code]}
-            # 余额减少
-            self.curr_cash -= add_trade_share[code] * breed_unit[self.breed] * selected_code["price"] * (1 + self.commission)
 
-        # 更新市值
+    def update_net_worth(self):
+        self.now_net_worth = self.curr_cash + sum([self.position[code]["shares"] * self.unit * self.position[code]["price"] for code in self.position.keys()])
+        # 保留2位小数
+        self.now_net_worth = round(self.now_net_worth,2)
+
+    def change_position(self, selected_codes: List[dict]):
+        # Create a copy of the current position dictionary
+        prev_position = self.position.copy()
+
+        # Sell positions not in the selected codes list
+        for code in prev_position.keys():
+            if code not in [code_info["code"] for code_info in selected_codes]:
+                self.sell_position(code)
+
+        # Update the position for each selected code
+        for code_info in selected_codes:
+            code = code_info["code"]
+            price = code_info["price"]
+            conversion_ratio = code_info["ratio"]
+
+            if code in prev_position:
+                prev_shares = prev_position[code]["shares"]
+                shares_diff = prev_shares - int(self.now_net_worth * conversion_ratio / (price * self.unit))
+                shares_diff = int(shares_diff)
+                if shares_diff > 0:
+                    # Sell a portion of the position
+                    shares_to_sell = shares_diff
+                    self.sell_position(code, shares_to_sell)
+                elif shares_diff < 0:
+                    # buy a portion of the position
+                    self.buy_position(code, price, -shares_diff)
+                    
+            else:
+                # Buy the position
+                shares = self.now_net_worth * conversion_ratio / (price * self.unit)
+                shares = int(shares)
+                self.buy_position(code, price, shares)
+
+        # Update the net worth
         self.update_net_worth()
-        # 保存当前持仓
-        self.cache_position.append(self.position)
-        # 保存当前市值
         self.cache_net_worth.append(self.now_net_worth)
 
+    def sell_position(self, code: str, shares: int = None):
+        if code in self.position:
+            if shares is None:
+                shares = self.position[code]["shares"]
+
+            price = self.position[code]["price"]
+
+            # Calculate the sale amount
+            sale_amount = shares * self.unit * price
+
+            # Calculate the transaction costs
+            commission = sale_amount * self.commission
+            # 保留2位小数
+            commission = round(commission,2)
+            stamp_duty = sale_amount * self.stamp_duty
+            stamp_duty = round(stamp_duty,2)
+
+            # Update the current cash and net worth
+            self.curr_cash += sale_amount - commission - stamp_duty
+            self.update_net_worth()
+
+            # Remove the position from the dictionary if all shares are sold
+            if shares == self.position[code]["shares"]:
+                del self.position[code]
+            else:
+                # Update the shares in the position dictionary
+                self.position[code]["shares"] -= shares
+
+    def buy_position(self, code: str, price: float, shares: int):
+        # Calculate the purchase amount
+        purchase_amount = shares * self.unit * price
+
+        # Calculate the transaction costs
+        commission = purchase_amount * self.commission
+        commission = round(commission,2)
+        # Check if the current cash is sufficient for the purchase
+        if purchase_amount + commission > self.curr_cash:
+            print("Insufficient funds to buy the position.")
+            return
+
+        # Update the current cash and net worth
+        self.curr_cash -= purchase_amount + commission 
+
+        self.update_net_worth()
+        # Add the position to the dictionary
+        if code not in self.position:
+            self.position[code] = {"price": price, "shares": shares}
+        else:
+            self.position[code]["shares"] += shares
 
 class TradingEnv():
     """交易环境"""
@@ -117,9 +137,26 @@ class TradingEnv():
                  strategy_pipelines: List = None,  # 策略流水线
                  breed: str = "cb",  # 品种 
                  run_mode:str = "day" # 运行模式 ["day","month","year"]
+                 ,load_custom_data:bool = False # 是否加载自定义数据
+                 ,custom_data_path:str = None # 自定义数据路径
+                 ,step_days:int = None # 步长
+                 ,loging_day:bool = False # 是否打印日志
                  ):
         super(TradingEnv, self).__init__()  # 父类初始化
-        self.run_mode = run_mode
+        self.loging_day = loging_day
+        if step_days is not None:
+            self.step_days = step_days
+        else:
+            self.run_mode = run_mode
+            if self.run_mode == "day":
+                self.step_days = 1
+            elif self.run_mode == "week":
+                self.step_days = 7
+            elif self.run_mode == "month":
+                self.step_days = 30
+            elif self.run_mode == "year":
+                self.step_days = 365
+    
         self.account = Account(init_cash=initial_balance, commission=commission, stamp_duty=stamp_duty)  # 账户
         self.start_date = start_date  # 开始日期
         self.end_date = end_date  # 结束日期
@@ -129,7 +166,10 @@ class TradingEnv():
         self.trade_days = get_trade_days(self.start_date, self.end_date)
         self.selected_codes = []  # 选中的股票/可转债代码
         # 获取交易时间内所有行情
-        self.codes,self.market_df = get_all_day(breed=breed,use_cache=True)
+        if load_custom_data:
+            self.codes,self.market_df = get_custom_day(data_path=custom_data_path)
+        else:
+            self.codes,self.market_df = get_all_day(breed=breed,use_cache=True)
         self.market_df = self.market_df[self.market_df['close'].notna()]  # 删除停牌数据
     def get_current_observation(self):
         self.current_observation_df = self.market_df[self.market_df["date"]==self.current_date]
@@ -144,14 +184,14 @@ class TradingEnv():
         self.get_current_observation()
         # 1.获取账户中所有持仓
         # 2.基于持仓标的获取当前收盘价
-        # 3.更新当前市值
+        # 3.更新当前市值 
         codes = self.account.position.keys()
         for code in codes:
             # 2.1获取当前收盘价
             close = self.current_observation_df.loc[code,"close"]
             # 2.2更新持仓价格
             self.account.position[code]["price"] = close
-        # 执行策略流水线
+        # 执行策略流水线 
         for strategy_pipeline in self.strategy_pipelines:
             strategy_pipeline(self)
         # TODO:执行调仓 [{"code":str."ratio":float,"price":float"}"}]
@@ -160,16 +200,22 @@ class TradingEnv():
 
     def run(self):
         """运行"""
+        trade_dates = []
         for i,trade_date in enumerate(self.trade_days):
             self.current_date = trade_date
             # TODO:根据run_mode跳过
-            if i % 5 != 0:
+            if i % self.step_days != 0:
                 continue
+            trade_dates.append(trade_date)
             self.step()
-            print(f"第{i}天，{trade_date}，{self.account.now_net_worth}")
+            if self.loging_day:
+                logger.info(f"第{i}天，{trade_date}，{self.account.now_net_worth}，当前持仓{self.account.position}")
             pass
-        # TODO:总结
-        pass
+        # TODO:总结 
+        # df_results = pd.DataFrame({"rate":self.account.cache_net_worth,"date":trade_dates})
+        # analyzer = Analyzer(df_results=df_results)
+        # analyzer.plot()
+        # analyzer.show_results()
 
 
 features = [
@@ -199,8 +245,14 @@ strategy_pipelines = [
         ]
     ),
     # 调仓
-    ConditionedWarehouse(k=10),
+    ConditionedWarehouse(k=25),
 ]
-TradingEnv(start_date="2019-01-01", end_date="2020-01-01", features=features,
-           strategy_pipelines=strategy_pipelines).run()
-# 先尝试固定仓位，再尝试动态仓位
+TradingEnv(
+    start_date="2019-01-01",
+    end_date="2023-08-15",
+    features=features,
+    strategy_pipelines=strategy_pipelines,
+    run_mode="week",
+    loging_day=True
+        ).run()
+
