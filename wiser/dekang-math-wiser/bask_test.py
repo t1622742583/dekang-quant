@@ -169,7 +169,7 @@ class TradingEnv():
         if load_custom_data:
             self.codes,self.market_df = get_custom_day(data_path=custom_data_path)
         else:
-            self.codes,self.market_df = get_all_day(breed=breed,use_cache=True)
+            self.codes,self.market_df = get_all_day(breed=breed,cache=True)
         self.market_df = self.market_df[self.market_df['close'].notna()]  # 删除停牌数据
     def get_current_observation(self):
         self.current_observation_df = self.market_df[self.market_df["date"]==self.current_date]

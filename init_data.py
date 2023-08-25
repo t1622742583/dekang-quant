@@ -8,6 +8,7 @@ def main(opt):
     if not os.path.exists('data'):
         # 创建文件夹
         os.makedirs('data')
+        
     if opt.breed == '':
         logger.error("请输入相应品种: python init_data.py -b etf/stock/cb")
     if opt.breed == "etf":
@@ -18,11 +19,13 @@ def main(opt):
     elif opt.breed == "cb":
         from data_helper.saver import save_all_cb_day
         save_all_cb_day()
+    elif opt.breed == "trade_date":
+        from data_helper.saver import save_all_trade_date
+        save_all_trade_date()
     else:
         logger.error("请输入正确的品种: python init_data.py -b etf/stock/cb")
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-b','--breed', type=str, default='cb', help='下载行情品种：etf/stock/cb ')
-    # TODO: 动作空间：买入、卖出、无操作/保持比例
     opt = parser.parse_args()
     main(opt)
