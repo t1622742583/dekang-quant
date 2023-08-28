@@ -19,7 +19,7 @@ import pandas as pd
 
 import time
 from tqdm import tqdm
-from data_helper.common import ALL_STOCKS_PATH, CB_DAY_PATH, ETF_DAY_PATH, STOCK_DAY_PATH
+from data_helper.common import ALL_STOCKS_PATH, BREAD_PATH, CB_DAY_PATH, ETF_DAY_PATH, STOCK_DAY_PATH
 from data_helper.geter import get_all_cb, get_day
 from data_helper.saver import save_stock_day
 from utils import change_code
@@ -47,4 +47,8 @@ pro = ts.pro_api()
         
 # codes = get_all_cb()
 # df = get_day('000005.SZ',"stock",all=True)
+breed = "stock"
+store = pd.HDFStore(BREAD_PATH[breed], mode='r')
+
+df = store.select("000011.SZ")
 pass
