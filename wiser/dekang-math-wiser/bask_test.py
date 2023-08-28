@@ -45,7 +45,7 @@ class Account:
         for code in prev_position.keys():
             if code not in [code_info["code"] for code_info in selected_codes]:
                 self.sell_position(code)
-
+        # 
         # Update the position for each selected code
         for code_info in selected_codes:
             code = code_info["code"]
@@ -141,6 +141,7 @@ class TradingEnv():
                  ,custom_data_path:str = None # 自定义数据路径
                  ,step_days:int = None # 步长
                  ,loging_day:bool = False # 是否打印日志
+                 ,loadcache:bool = True # 是否加载缓存
                  ):
         super(TradingEnv, self).__init__()  # 父类初始化
         self.loging_day = loging_day
@@ -169,7 +170,7 @@ class TradingEnv():
         if load_custom_data:
             self.codes,self.market_df = get_custom_day(data_path=custom_data_path)
         else:
-            self.codes,self.market_df = get_all_day(breed=breed,use_cache=True)
+            self.codes,self.market_df = get_all_day(breed=breed,use_cache=loadcache)
         self.market_df = self.market_df[self.market_df['close'].notna()]  # 删除停牌数据
     def get_current_observation(self):
         self.current_observation_df = self.market_df[self.market_df["date"]==self.current_date]
@@ -220,7 +221,7 @@ class TradingEnv():
 
 features = [
     Feature("close"),
-    Feature("cb_over_rate"),
+    Feature("cb_over_rate"),  # 转股溢价率(%) = (转股价-现价)/现价*100% 重要因子
     Feature("profit_to_gr"),
     Feature("dt_netprofit_yoy"),
 ]
@@ -230,6 +231,7 @@ strategy_pipelines = [
     # 选股
     TopFactor(
         factors=[
+
             {
                 "name": "cb_over_rate",
                 "big2smail": True,

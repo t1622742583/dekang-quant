@@ -135,7 +135,59 @@ def get_all_day(breed="cb",start_date="2015-01-01", end_date=pd.Timestamp.today(
         with pd.HDFStore(CACHE_DAY_PATH) as store:
             store.put(breed, merged_data)
     return store_keys,merged_data
+def get_all_day_ml(breed="cb", start_date="2015-01-01", end_date=pd.Timestamp.today().strftime('%Y-%m-%d'), cache=False, use_cache=False):
+    """获取日线数据"""
+    if use_cache:
+        with pd.HDFStore(CACHE_DAY_PATH) as store:
+            df = store.select(breed+'ml')
+        # 去重
+        df.drop_duplicates(subset=['date', 'code'], keep='first', inplace=True)
+        # 保存为HDF5文件
 
+        # df.to_hdf(CACHE_DAY_PATH, key=breed, mode='w')
+
+        codes = df['code'].unique().tolist()
+        return codes, df
+
+    # 打开HDF5文件
+    store = pd.HDFStore(BREAD_PATH[breed], mode='r')  # mode='r' 只读模式
+    # 用于存储股票历史数据的列表
+    stock_data_list = []
+    # 遍历HDF5文件中的所有键（股票代码）
+    # 所有标的
+    store_keys = store.keys()
+    # 进度条
+    # 
+    # 
+    progress_bar = tqdm(store_keys, desc="load", unit=f" {breed}")
+    for code in progress_bar:
+        progress_bar.set_postfix(code=code)
+        # 使用select函数查询满足日期条件的数据
+        query = f"`date` >= '{start_date}' & `date` <= '{end_date}'"
+        stock_data = store.select(code, where=query)
+        # 加入code列
+        stock_data['code'] = code.split('/')[-1]
+        
+        # 创建涨跌列（up_down）
+        stock_data['up_down'] = (stock_data['close'].shift(-1) > stock_data['close']).astype(int)
+
+        # 删除最后一天
+        stock_data = stock_data.iloc[:-1]
+
+        # 添加到股票数据列表
+        stock_data_list.append(stock_data)
+
+    # 关闭HDF5文件
+    store.close()
+
+    # 将所有股票数据纵向合并
+    merged_data = pd.concat(stock_data_list, ignore_index=True)
+
+    if cache:
+        with pd.HDFStore(CACHE_DAY_PATH) as store:
+            store.put(breed+"ml" , merged_data)
+
+    return store_keys, merged_data
 def get_trade_days(start_date=None, end_date=None):
     """ 获取所有交易日"""
     df = pd.read_csv(ALL_TRADE_DATE_PATH)
@@ -151,3 +203,4 @@ def lack_data(breed='etf',code=None,start_date=None, end_date=None):
 
 
 
+# 
