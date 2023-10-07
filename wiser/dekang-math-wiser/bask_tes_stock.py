@@ -9,8 +9,8 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
 sys.path.append(parent_dir)
 from utils import Analyzer, Feature
 from typing import List
-
-from data_helper.geter import get_all_day, get_custom_day, get_trade_days
+from strategys.cb import TopFactor, ConditionedWarehouse
+from data_helper.geter import HqMm, get_all_day, get_custom_day, get_trade_days
 breed_unit = {
     "cb": 10,
     "stock": 100,
@@ -34,7 +34,10 @@ class Account:
 
     def update_net_worth(self):
         self.now_net_worth = self.curr_cash + sum([self.position[code]["shares"] * self.unit * self.position[code]["price"] for code in self.position.keys()])
-        # 保留2位小数
+        # 如果self.now_net_worth 为dataframe
+        if type(self.now_net_worth) == pd.Series:
+            print(self.now_net_worth)
+            pass
         self.now_net_worth = round(self.now_net_worth,2)
 
     def change_position(self, selected_codes: List[dict]):
@@ -68,7 +71,8 @@ class Account:
                 # Buy the position
                 shares = self.now_net_worth * conversion_ratio / (price * self.unit)
                 shares = int(shares)
-                self.buy_position(code, price, shares)
+                if shares != 0:
+                    self.buy_position(code, price, shares)
 
         # Update the net worth
         self.update_net_worth()
@@ -126,6 +130,7 @@ class Account:
 
 class TradingEnv():
     """交易环境"""
+
     def __init__(self,
                  start_date: str,  # 开始日期
                  end_date: str,  # 结束日期
@@ -157,7 +162,7 @@ class TradingEnv():
             elif self.run_mode == "year":
                 self.step_days = 365
     
-        self.account = Account(init_cash=initial_balance, commission=commission, stamp_duty=stamp_duty)  # 账户
+        self.account = Account(init_cash=initial_balance, commission=commission, stamp_duty=stamp_duty,breed=breed)  # 账户
         self.start_date = start_date  # 开始日期
         self.end_date = end_date  # 结束日期
         self.initial_balance = initial_balance  # 初始账户余额
@@ -165,14 +170,14 @@ class TradingEnv():
         self.strategy_pipelines = strategy_pipelines  # 策略管道
         self.trade_days = get_trade_days(self.start_date, self.end_date)
         self.selected_codes = []  # 选中的股票/可转债代码
+        self.hq = HqMm()
         # 获取交易时间内所有行情
-        if load_custom_data:
-            self.codes,self.market_df = get_custom_day(data_path=custom_data_path)
-        else:
-            self.codes,self.market_df = get_all_day(breed=breed,use_cache=loadcache)
-        self.market_df = self.market_df[self.market_df['close'].notna()]  # 删除停牌数据
+        # if load_custom_data:
+        #     self.codes,self.market_df = get_custom_day(data_path=custom_data_path)
+        # else:
+        #     self.codes,self.market_df = get_all_day(breed=breed,use_cache=loadcache)
     def get_current_observation(self):
-        self.current_observation_df = self.market_df[self.market_df["date"]==self.current_date]
+        self.current_observation_df = self.hq.get(date=self.current_date)
         self.current_observation_df.set_index("code",inplace=True)
         feature_dict = {}
         for feature in self.features:
@@ -188,6 +193,9 @@ class TradingEnv():
         codes = self.account.position.keys()
         for code in codes:
             # 2.1获取当前收盘价
+            if code not in self.current_observation_df.index:
+                # 未交易
+                continue
             close = self.current_observation_df.loc[code,"close"]
             # 2.2更新持仓价格
             self.account.position[code]["price"] = close
@@ -220,7 +228,7 @@ class TradingEnv():
 
 features = [
     Feature("close"),
-    Feature("cb_over_rate"),  # 转股溢价率(%) = (转股价-现价)/现价*100% 重要因子
+    # Feature("cb_over_rate"),  # 转股溢价率(%) = (转股价-现价)/现价*100% 重要因子
     Feature("profit_to_gr"),
     Feature("dt_netprofit_yoy"),
     Feature("eqt_to_debt"),
@@ -233,41 +241,41 @@ features = [
     Feature("pb"),
     Feature("equity_yoy"),
 ]
-from strategys.cb import TopFactor, ConditionedWarehouse
+
 
 strategy_pipelines = [
     # 选股
     TopFactor(
         factors=[
 
-            {
-                "name": "cb_over_rate",
-                "big2smail": True,
-            },
+            # {
+            #     "name": "cb_over_rate",
+            #     "big2smail": True,
+            # },
             {
                 "name": "profit_to_gr",# # 新浪财经-财务分析-财务指标： stock_financial_analysis_indicator(总资产利润率(%))
                 "big2smail": True,
             },
-            {
-                "name": "dt_netprofit_yoy", 
-                # 新浪财经-财务分析-财务指标： stock_financial_analysis_indicator (扣除非经常性损益后的净利润(元),)
-                # stock_cg_guarantee_cninfo (归属于母公司所有者权益	)
-                "big2smail": False,
-            },
+            # {
+            #     "name": "dt_netprofit_yoy", 
+            #     # 新浪财经-财务分析-财务指标： stock_financial_analysis_indicator (扣除非经常性损益后的净利润(元),)
+            #     # stock_cg_guarantee_cninfo (归属于母公司所有者权益	)
+            #     "big2smail": False,
+            # },
             {"name":"debt_to_assets","big2smail": True}, # stock_financial_analysis_indicator（资产负债率）
             
             {
                 "name": "roa_yearly",
                 "big2smail": True,
             },
-            # {
-            #     "name": "debt_to_assets",
-            #     "big2smail": True,
-            # },
-            # {"name": "eqt_to_debt","big2smail": False},
-            # {"name": "q_npta","big2smail": False},
-            # {"name": "roa_dp","big2smail": True,},
-            # {"name": "equity_yoy","big2smail": True,},
+            {
+                "name": "debt_to_assets",
+                "big2smail": True,
+            },
+            {"name": "eqt_to_debt","big2smail": False},
+            {"name": "q_npta","big2smail": False},
+            {"name": "roa_dp","big2smail": True,},
+            {"name": "equity_yoy","big2smail": True,},
             
         ]
     ),
@@ -275,11 +283,13 @@ strategy_pipelines = [
     ConditionedWarehouse(k=8),
 ]
 TradingEnv(
+    breed="stock",
     start_date="2019-01-01",
     end_date="2023-08-15",
     features=features,
     strategy_pipelines=strategy_pipelines,
     run_mode="week",
+    # step_days=,
     loging_day=True
         ).run()
 

@@ -20,7 +20,10 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier
+from catboost import CatBoostClassifier 
+from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier 
 from sklearn.metrics import accuracy_score
 # 加载数据并划分训练集和测试集
 codes,market_df = get_all_day_ml(start_date="2019-01-01",use_cache=True)
@@ -65,13 +68,16 @@ y_test = test_df[target]
 # 创建分类器列表
 classifiers = [
     # ('Logistic Regression', make_pipeline(StandardScaler(), LogisticRegression())),
+    # ('LGBMClassifier', make_pipeline(StandardScaler(), LGBMClassifier())),
+    # ('CatBoostClassifier', make_pipeline(StandardScaler(),CatBoostClassifier())),
+    ('CatBoostClassifier', make_pipeline(StandardScaler(), HistGradientBoostingClassifier())),
     # ('Decision Tree', DecisionTreeClassifier()),
     # ('Random Forest', RandomForestClassifier()),
     # 
     # ('Gradient Boosting', GradientBoostingClassifier()),
-    ('AdaBoost', AdaBoostClassifier()),
-    ('XGBoost', XGBClassifier()),
-    ('SVM', make_pipeline(StandardScaler(), SVC())),
+    # ('AdaBoost', AdaBoostClassifier()),
+    # ('XGBoost', XGBClassifier()),
+    # ('SVM', make_pipeline(StandardScaler(), SVC())),
 ]
 # 
 # 对每个分类器进行训练和验证
@@ -81,3 +87,5 @@ for name, classifier in classifiers:
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Accuracy: {accuracy:.4f}")
+# TODO:尝试研究涨停
+# TODO:尝试盘前数据 难点：盘前数据9：15-9：30不是连续的，可能10次，可能5次，可能1次，不好设计输入结构，那么将其统一起来，粒度为每分钟或每半分钟的价格和量能

@@ -1,21 +1,28 @@
+import os
+import sys
+import pandas as pd
+# 获取当前文件所在目录的绝对路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 获取三级父目录的绝对路径
+parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+sys.path.append(parent_dir)
 import datetime
 from executer.dekang_stock_executer.env import TradingEnv
 from datetime import datetime, timedelta
+from utils import Feature
+from strategys.cb import TopFactor, ConditionedWarehouse
 import os
 import akshare as ak
 import tushare as ts
 import pandas as pd
 from data_helper.common import STOCK_Trade_PATH
 from utils import code_add_postfix
-pd.set_option('expand_frame_repr', False)  # True就是可以换行显示。设置成False的时候不允许换行
-pd.set_option('display.max_columns', None)  # 显示所有列
-# pd.set_option('display.max_rows', None)  # 显示所有行
-pd.set_option('colheader_justify', 'centre')  # 显示居中
+# from rocketry import Rocketry
+# from rocketry.conditions.api import daily
 ts.set_token('854634d420c0b6aea2907030279da881519909692cf56e6f35c4718c')
 pro = ts.pro_api()
-from rocketry import Rocketry
-from rocketry.conditions.api import daily
-app = Rocketry()
+
+# app = Rocketry()
 
 
 def get_price(code, start_date, end_date, frequency):
@@ -39,7 +46,7 @@ def get_fin(ts_code,today):
     df_fina = pro.fina_indicator(ts_code=ts_code, start_date=fina_start_date,fields=','.join(fina_columns))
     
     return df_fina
-@app.task(daily.after("12:00"))
+# @app.task(daily.after("12:00"))
 def get_caiwuzhibiao():
     """"""
     # 获取当前日期
@@ -67,7 +74,7 @@ def get_caiwuzhibiao():
     # 写入当天行情
     parquet_name = f"{today}_fina.parquet"
     merged_df.to_parquet(os.path.join(STOCK_Trade_PATH,parquet_name), index=False)
-@app.task(daily.after("14:55"))
+# @app.task(daily.after("14:55"))
 def get_hangqing():
     # 获取当前日期
     today = pd.Timestamp.today().strftime('%Y%m%d')
@@ -84,14 +91,68 @@ def get_hangqing():
     merged_df = merged_df.dropna(subset='close')
     # 去除close为NaN的行
     merged_df.to_parquet(os.path.join(STOCK_Trade_PATH,parquet_name), index=False)
-@app.task(daily.after("14:55"))
+
+features = [
+    Feature("close"),
+    Feature("profit_to_gr"),
+    Feature("dt_netprofit_yoy"),
+    Feature("eqt_to_debt"),
+    Feature("debt_to_assets"),
+    Feature("roa_yearly"),
+    Feature("q_npta"),
+    Feature("npta"),
+    Feature("roa_dp"),
+    Feature("equity_yoy"),
+]
+
+
+strategy_pipelines = [
+    # 选股
+    TopFactor(
+        factors=[
+
+            {
+                "name": "profit_to_gr",# # 新浪财经-财务分析-财务指标： stock_financial_analysis_indicator(总资产利润率(%))
+                "big2smail": True,
+            },
+            {"name":"debt_to_assets","big2smail": True}, # stock_financial_analysis_indicator（资产负债率）
+            
+            {
+                "name": "roa_yearly",
+                "big2smail": True,
+            },
+            {
+                "name": "debt_to_assets",
+                "big2smail": True,
+            },
+            {"name": "eqt_to_debt","big2smail": False},
+            {"name": "q_npta","big2smail": False},
+            {"name": "roa_dp","big2smail": True,},
+            {"name": "equity_yoy","big2smail": True,},
+            
+        ]
+    ),
+    # 调仓 
+    ConditionedWarehouse(k=8),
+]
+# @app.task(daily.after("14:55"))
 def jiaoyi():
-    # 传入环境
-    # in 当前行情（环境），资金 ，持仓 
-    TradingEnv(
-        
+    initial_balance = 100000 # TODO:获取当前资金
+    position = dict()
+    today = "20230928"
+    # today = pd.Timestamp.today().strftime('%Y%m%d')
+    data_path = os.path.join(STOCK_Trade_PATH,f"{today}.parquet")
+    te = TradingEnv(
+        features = features,
+        strategy_pipelines = strategy_pipelines,
+        initial_balance = initial_balance,
+        breed="stock",
+        position = position,
+        data_path=data_path
     )
-    # out 行为 (买/卖 什么 数量) 
-    # 调用执行-是否在风险股票池（如聪明资金跑路，龙虎榜拉萨）
+    output = te()
+    print(output)
+    # out 行为 (买/卖,什么,数量) 
+    # 调用执行-TODO:是否在风险股票池（如聪明资金跑路，龙虎榜拉萨）
     pass
-get_hangqing()
+jiaoyi()

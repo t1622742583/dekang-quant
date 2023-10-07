@@ -115,7 +115,7 @@ def save_stock_day(code="600000.SH",start_date = '20150101',end_date = ''):
     # trade_date -> date
     df_all = df_all.rename(columns={'trade_date': 'date'})
     # code = change_code(code)
-    # df_all.to_csv(f"{code}.csv",index=False)
+    # df_all.to_csv(f"{code}.csv"1
     with pd.HDFStore(STOCK_DAY_PATH) as store:
         store.put(code, df_all, format='table',data_columns=True)
 def save_all_stock_day():
@@ -127,6 +127,7 @@ def save_all_stock_day():
         # code_ = change_code(code)
         # 如果已经存在则跳过
         with pd.HDFStore(STOCK_DAY_PATH) as store:
+            
             if code in store:
                 continue
         success = False

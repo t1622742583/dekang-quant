@@ -85,3 +85,12 @@ def change_code(code):
         code = "sz"+code
         
     return code
+def code_add_postfix(code):
+    """给code加上后缀"""
+    if code.startswith("6"):
+        code = code + ".SH"
+    elif code.startswith("0") or code.startswith("3"):
+        code = code + ".SZ"
+    else:
+        code = code + ".BJ"
+    return code
